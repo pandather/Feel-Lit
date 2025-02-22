@@ -1,26 +1,34 @@
 using Godot;
-//using System;
-//using System.Collections.Generic;
-//using System.Text;
-//using System.Threading.Tasks;
-using OpenAI.Chat;
+using System;
+using OpenAI.Chat; // if you need any types from this namespace
 
 public partial class EbookReader : Control
 {
-	private HttpClient httpClient;
-	
 	// UI nodes
 	private RichTextLabel pageLabel;
 	private Button nextButton;
 	private Button prevButton;
-
+	
 	// List to store paginated text and current page index
 	private Godot.Collections.Array<string> pages = new Godot.Collections.Array<string>();
 	private int currentPage = 0;
-	private static readonly string apiKey = "api_key";
-	private static readonly string endpoint = "https://api.openai.com/v1/chat/completions";
+	private string content="";
 
+	// Custom assistant API details
+	private string assistantId = "asst_zh2w03jtgCokVqaca8otBDrR";
+	private string apiKey = ""; // update with your API key
 
+	// Endpoints
+	private string createThreadAndRunEndpoint = "https://api.openai.com/v1/threads/runs";
+	// When a thread already exists, use the "create message" endpoint:
+	// POST https://api.openai.com/v1/threads/{thread_id}/messages
+
+	// Store the thread id after the first run is created.
+	private string currentThreadId = "";
+	
+	// HTTPRequest node for API calls
+	private HttpRequest chatRequest;
+	
 	public override void _Ready()
 	{
 		// Get UI nodes
@@ -28,26 +36,24 @@ public partial class EbookReader : Control
 		nextButton = GetNode<Button>("NextButton");
 		prevButton = GetNode<Button>("PrevButton");
 
-		httpClient = new HttpClient();
+		// Create and add an HTTPRequest node for API calls
+		chatRequest = new HttpRequest();
+		AddChild(chatRequest);
+		chatRequest.Connect("request_completed", new Callable(this, "_OnChatGPTResponseCompleted"));
 
-		// Load the text file
-		GD.Print("content");
+		// Load the text file and paginate it.
 		string filePath = "res://books/Fahrenheit 451.txt";
-		if (FileAccess.FileExists(filePath))
-			GD.Print("file exists");
-
 		if (FileAccess.FileExists(filePath))
 		{
 			using var file = FileAccess.Open(filePath, FileAccess.ModeFlags.Read);
-			string content = file.GetAsText();
+			content = file.GetAsText();
 			file.Close();
 
-			// Fixed-size pagination: split text every 1000 characters.
+			// Split text into fixed-size pages (every 1000 characters)
 			int pageLength = 1000;
 			pages.Clear();
 			for (int i = 0; i < content.Length; i += pageLength)
 			{
-				// If remaining text is less than a full page, take the rest
 				if (i + pageLength > content.Length)
 					pages.Add(content.Substring(i));
 				else
@@ -66,19 +72,18 @@ public partial class EbookReader : Control
 		prevButton.Pressed += OnPrevButtonPressed;
 	}
 
-	// Display the page at the given index
-	async private void ShowPage(int pageIndex)
+	// Display the page and trigger a request with sentiment analysis instructions.
+	private void ShowPage(int pageIndex)
 	{
 		if (pageIndex >= 0 && pageIndex < pages.Count)
 		{
 			pageLabel.Text = pages[pageIndex];
-			GD.Print(pageLabel.Text);
-			string response = GetChatGPTResponse(pageLabel.Text+"\n\n Use sentiment analysis to determine an affect for each page of an ebook");
-			GD.Print(response);
+			// Append an instruction for sentiment analysis.
+			string prompt = "json\n" + content + "\n\n" + pageLabel.Text;
+			GetChatGPTResponse(prompt);
 		}
 	}
 
-	// Signal handler for the Next button
 	private void OnNextButtonPressed()
 	{
 		if (currentPage < pages.Count - 1)
@@ -88,7 +93,6 @@ public partial class EbookReader : Control
 		}
 	}
 
-	// Signal handler for the Previous button
 	private void OnPrevButtonPressed()
 	{
 		if (currentPage > 0)
@@ -98,42 +102,79 @@ public partial class EbookReader : Control
 		}
 	}
 
-	//// Call OpenAI API using Godot.HttpClient
-	//private async Task<string> GetChatGPTResponse(string prompt)
-	//{
-		//var jsonRequest = "{\"model\":\"gpt-4\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a helpful assistant.\"},{\"role\":\"user\",\"content\":\"" + prompt + "\"}],\"max_tokens\":100}";
-		//var request = new HttpRequest();
-		//AddChild(request);
-//
-		//request.RequestCompleted += (long result, long responseCode, string[] headers, byte[] body) =>
-		//{
-			//if (responseCode == 200)
-			//{
-				//string response = Encoding.UTF8.GetString(body);
-				//GD.Print("Response: " + response);
-			//}
-			//else
-			//{
-				//GD.PrintErr("Error: " + responseCode);
-			//}
-		//};
-//
-		//var headers = new string[]
-		//{
-			//"Authorization: Bearer " + apiKey,
-			//"Content-Type: application/json"
-		//};
-		//request.Request(endpoint, headers, HttpClient.Method.Post, jsonRequest);
-		//return "";
-	//}
-	// Call OpenAI API using Godot.HttpClient
-private string GetChatGPTResponse(string prompt)
-{
-	//ChatClient client = new(model: "gpt-4o", apiKey: Environment.GetEnvironmentVariable(apiKey));
-//
-	//ChatCompletion completion = client.CompleteChat("Say 'this is a test.'");
-//
-	//GD.Print($"[ASSISTANT]: {completion.Content[0].Text}");
-	return prompt;
-}
+	// Send a POST request:
+	// - If no thread exists, create a new thread & run.
+	// - Otherwise, add a message to the existing thread.
+	private void GetChatGPTResponse(string prompt)
+	{
+		Godot.Collections.Dictionary payload;
+		string url;
+
+		if (string.IsNullOrEmpty(currentThreadId))
+		{
+			// No thread exists: create a new thread and run.
+			url = createThreadAndRunEndpoint;
+			payload = new Godot.Collections.Dictionary {
+				{ "assistant_id", assistantId },
+				{ "thread", new Godot.Collections.Dictionary {
+					{ "messages", new Godot.Collections.Array {
+						new Godot.Collections.Dictionary {
+							{ "role", "user" },
+							{ "content", prompt }
+						}
+					} }
+				} },
+				{ "temperature", 0.7 }
+			};
+		}
+		else
+		{
+			// Thread already exists: add a new user message to the existing thread.
+			url = "https://api.openai.com/v1/threads/" + currentThreadId + "/messages";
+			payload = new Godot.Collections.Dictionary {
+				{ "role", "user" },
+				{ "content", prompt }
+			};
+		}
+
+		string jsonPayload = Json.Stringify(payload);
+		string[] headers = new string[] {
+			"Content-Type: application/json",
+			"Authorization: Bearer " + apiKey,
+			"OpenAI-Beta: assistants=v2"
+		};
+
+		Error err = chatRequest.Request(url, headers, HttpClient.Method.Post, jsonPayload);
+		if (err != Error.Ok)
+		{
+			GD.Print("Error sending request: " + err.ToString());
+		}
+	}
+
+	// Callback when the HTTP request completes.
+	private void _OnChatGPTResponseCompleted(int result, int responseCode, Godot.Collections.Array<string> headers, byte[] body)
+	{
+		string responseText = System.Text.Encoding.UTF8.GetString(body);
+		GD.Print("[ASSISTANT]: " + responseText);
+
+		// If this was the first request (run creation), extract and store the thread_id.
+		if (string.IsNullOrEmpty(currentThreadId))
+		{
+			Json JSON= new Json();
+			Error parseResult = JSON.Parse(responseText);
+			if (parseResult == (int)Godot.Error.Ok)
+			{
+				var jsonObj = (Godot.Collections.Dictionary)JSON.Data;
+				if (jsonObj.ContainsKey("thread_id"))
+				{
+					currentThreadId = (string)jsonObj["thread_id"];
+					GD.Print("Stored thread_id: " + currentThreadId);
+				}
+			}
+			else
+			{
+				GD.Print("JSON Parse error");
+			}
+		}
+	}
 }
