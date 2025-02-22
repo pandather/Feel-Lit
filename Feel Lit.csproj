@@ -7,6 +7,9 @@
     <RootNamespace>FeelLit</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Datafeel" Version="2.1.0-alpha" />
+    <PackageReference Include="Datafeel.NET.BLE" Version="2.1.0-alpha" />
+    <PackageReference Include="Datafeel.NET.Serial" Version="2.1.0-alpha" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="OpenAI" Version="2.1.0" />
   </ItemGroup>
