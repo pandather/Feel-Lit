@@ -23,6 +23,7 @@ theme = SubResource("Theme_1wgpl")
 text = "Previous"
 
 [node name="NextButton" type="Button" parent="."]
+layout_mode = 0
 offset_left = 1315.0
 offset_top = 703.0
 offset_right = 1865.0
