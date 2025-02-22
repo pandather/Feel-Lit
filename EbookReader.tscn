@@ -1,0 +1,38 @@
+[gd_scene load_steps=4 format=3 uid="uid://cu756ptc8tlmb"]
+
+[ext_resource type="Script" path="res://EbookReader.cs" id="1_o8xlp"]
+
+[sub_resource type="Theme" id="Theme_1wgpl"]
+default_font_size = 130
+
+[sub_resource type="Theme" id="Theme_d10rq"]
+default_font_size = 25
+
+[node name="Control" type="Control"]
+layout_mode = 3
+anchors_preset = 0
+script = ExtResource("1_o8xlp")
+
+[node name="PrevButton" type="Button" parent="."]
+layout_mode = 1
+offset_left = 35.0
+offset_top = 694.0
+offset_right = 585.0
+offset_bottom = 1027.0
+theme = SubResource("Theme_1wgpl")
+text = "Previous"
+
+[node name="NextButton" type="Button" parent="."]
+offset_left = 1315.0
+offset_top = 703.0
+offset_right = 1865.0
+offset_bottom = 1027.0
+theme = SubResource("Theme_1wgpl")
+text = "Next"
+
+[node name="PageLabel" type="RichTextLabel" parent="."]
+layout_mode = 0
+offset_right = 1894.0
+offset_bottom = 656.0
+theme = SubResource("Theme_d10rq")
+text = "Our book is going to be loaded here"
